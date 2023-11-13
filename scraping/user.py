@@ -1,9 +1,7 @@
 import json
-from json import JSONEncoder
 import re
-import requests
 from bs4 import BeautifulSoup
-from base import Base
+from scraping.base import Base
 
 
 class User(Base):
@@ -19,7 +17,7 @@ class User(Base):
         self.user_favorites(page)
         self.user_stats(page)
 
-    def user_favorites(self, page: None) -> list:        
+    def user_favorites(self, page: BeautifulSoup) -> list:
         data = page.find("section", {"id": ["favourites"], }).findChildren("div")
         names = []
 
@@ -29,8 +27,9 @@ class User(Base):
             names.append((img['alt'], movie_url))
             
         self.favorites = names
+        return self.favorites
 
-    def user_stats(self, page: None) -> dict:
+    def user_stats(self, page: BeautifulSoup) -> dict:
         span = []
         stats = {}
 
@@ -43,6 +42,7 @@ class User(Base):
             stats[item[1].text.replace(u'\xa0', ' ')] = item[0].text
 
         self.stats = stats
+        return self.stats
 
     def user_watchlist(self) -> str:
         page = self.get_parsed_page("https://letterboxd.com/" + self.username + "/watchlist/")
@@ -55,6 +55,7 @@ class User(Base):
             raise Exception("No user found")
 
         self.watchlist_length = ret
+        return ret
 
 
 def user_films_watched(user: User) -> list:
@@ -83,7 +84,6 @@ def user_films_watched(user: User) -> list:
 
 
 def user_films_rated(user: User) -> list:
-    """ """
     if type(user) != User:
         raise Exception("Improper parameter")
 
@@ -114,7 +114,7 @@ def user_films_rated(user: User) -> list:
             except Exception as e:
                 print(f"[Error]: couldn't get film rating. {e=}")
             finally:
-                rating_list.append( (film_title_unreliable, film_id, film_url_pattern, rating ) )
+                rating_list.append( (film_title_unreliable, film_id, film_url_pattern, rating, user.username ) )
 
         curr = len(rating_list)
 

@@ -3,7 +3,7 @@ Adapted from https://github.com/nmcassa/letterboxdpy
 """
 import re
 from json import JSONEncoder
-from base import Base
+from scraping.base import Base
 
 
 class List(Base):

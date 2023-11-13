@@ -1,6 +1,6 @@
 import json
 from typing import List
-from base import Base
+from scraping.base import Base
 
 
 MEMBERS_YEAR_TOP = "https://letterboxd.com/members/popular/this/year/"

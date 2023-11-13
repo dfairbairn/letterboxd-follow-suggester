@@ -5,7 +5,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 from json import JSONEncoder
-from base import Base
+from scraping.base import Base
 
 
 class Movie(Base):
