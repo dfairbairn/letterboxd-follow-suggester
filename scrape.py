@@ -1,7 +1,7 @@
+import argparse
 import json
 import logging
 import sqlite3
-import time
 from scraping import members, user
 
 logging.basicConfig()
@@ -18,7 +18,6 @@ class RatingObject:
     def __init__(self, film_title, film_url, film_id, film_rating, user):
         # Database ID entries will be unique to a user/film_id combo.
         # **This implies we only count a single rating of a film by a user **
-        self.id = hashlib.md5( bytes(film_id, "UTF-8") + bytes(user, "UTF-8") ).hexdigest()
 
         self.last_updated = datetime.utcnow()
         self.film_title = film_title
@@ -26,6 +25,16 @@ class RatingObject:
         self.film_id = film_id
         self.film_rating = film_rating
         self.user = user
+        self.id = hashlib.md5( bytes(film_id, "UTF-8") + bytes(user, "UTF-8") + bytes(str(self.last_updated), "UTF-8") ).hexdigest()
+
+
+@dataclass
+class ScrapedUserObject:
+    """ A class for structuring scrapes of Letterboxd users """
+    def __init__(self, user):
+        self.user = user
+        self.last_updated = datetime.utcnow()
+        self.id = hashlib.md5( bytes(user, "UTF-8") + bytes(str(self.last_updated), "UTF-8") )
 
 
 class Scraper:
@@ -39,6 +48,18 @@ class Scraper:
         self._results = self.scraping_function(*self._args, **self._kwargs)
 
 
+class UsersScraper(Scraper):
+    def structure_results(self):
+        """
+        Fit the user list into ScrapedUserObjects
+        :return:
+        """
+        self.results = []
+        for rating in self._results:
+            self.results.append(ScrapedUserObject(rating))
+        return self.results
+
+
 class RatingScraper(Scraper):
     def structure_results(self):
         """
@@ -50,21 +71,31 @@ class RatingScraper(Scraper):
         self.results = []
         for rating in self._results:
             # Example entry in _results: (film_title_unreliable, film_id, film_url_pattern, rating, user )
+            rating_val = RatingScraper.translate_stars(rating[3])
+            logger.info(f"{rating} --------> {rating_val}")
             ro = RatingObject(
-                film_title=rating[0], film_id=rating[1], film_url=rating[2], film_rating=rating[3], user=rating[4])
+                film_title=rating[0], film_id=rating[1], film_url=rating[2], film_rating=rating_val, user=rating[4])
             self.results.append(ro)
         return self.results
 
     @staticmethod
     def translate_stars(rating):
+
+        rating_val = 0
+        if "½" in rating:
+            rating_val += 0.5
+            logger.info(f"'½' found in {rating}")
+        if "★" in rating:
+            rating_val += rating.count("★")
+
+        if rating_val == 0:
+            logger.info(f"rating with no 1/2 or stars: {rating}")
+
         if rating == "" or rating == "NR":
             # coerce all "" values into NR, b/c accidental ratings that get regraded to "" should usually be considered NR
-            return None
-        elif "★" in rating:
-            return 0.5 * rating.count("★")
-        else:
-            print(f"[Error] weird value: {rating}")
-            return None
+            rating_val = None
+
+        return rating_val
 
 
 class ParsingStorage:
@@ -76,11 +107,8 @@ class ParsingStorage:
         self.create_parsing_table()
 
     def create_parsing_table(self):
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, "
-                            "name TEXT, url TEXT, last_updated TEXT)")
-
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS movies(id INTEGER PRIMARY KEY, name TEXT, url TEXT, "
-                            "last_updated TEXT)")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, "
+                            "user TEXT, last_updated TEXT)")
 
         # TODO: Decide on whether to include reviews in this table, or store those separately?
         self.cursor.execute("CREATE TABLE IF NOT EXISTS ratings(id TEXT PRIMARY KEY, user TEXT, film_title TEXT,"
@@ -93,35 +121,34 @@ class ParsingStorage:
 
         self.connection.commit()
 
+    def insert_member(self, suo: ScrapedUserObject):
+        self.cursor.execute("INSERT INTO users (id, user, last_updated) VALUES (?, ?, ?)",
+                            (suo.id, suo.user, suo.last_updated))
 
+    def close(self):
+        self.connection.close()
 
 
 def main():
-    # Do script stuff
+    parser = argparse.ArgumentParser("A scraper")
+    parser.add_argument('--get-top-members', dest="n_top_members",
+                        help="Scrape < N > most popular Letterboxd members of the last year"
+                        " and insert into DB.")
+    parser.add_argument('--user-film-ratings', dest="user",
+                        help="Scrape all film ratings for < user >, insert into DB ")
+    parser.add_argument('--update-film-ratings', dest="update", action="store_true",
+                        help="Flag denoting to scrape film ratings for all users in DB not scraped in the last 7 days")
+    args = parser.parse_args()
 
-    # 0. Set up DB
-    db = ParsingStorage()
+    logger.info(f"{args=}")
+    if args.n_top_members:
+        pass
 
-    # 1. Get active member list
-    # N = 30
-    # member_list = members.top_users(N)
-    # with open(f'top_2023_members_{N}.json', 'w') as f:
-    #      json.dump(member_list, f)
+    elif args.user:
+        pass
 
-    # 2. *Slowly*, grab all movie ratings for each user
-    # user_ratings = {}
-    # for m in member_list:
-    #     time.sleep(1)
-    #     user_info = user.User(m)
-    #     ratings_for_user = user.user_films_rated(user_info)
-    #     user_ratings[m] = ratings_for_user
-    # 2b. Database testing hack:
-    user_ratings = {'davidteef': []}
-    with open('scraping/davidteef_ratings.json', 'r') as f:
-        user_ratings['davidteef'] = json.load(f)
-
-    # 3. Output scraped results: Fill DB up with scraped data
-    # let's try storing our ratings in the DB table then.
+    if args.update:
+        pass
 
 
 if __name__ == "__main__":
