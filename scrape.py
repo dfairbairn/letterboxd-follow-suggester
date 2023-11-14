@@ -1,12 +1,6 @@
 import argparse
-import json
-import logging
 import sqlite3
 from scraping import members, user
-
-logging.basicConfig()
-logger = logging.getLogger(__name__)
-
 
 
 from datetime import datetime
@@ -72,7 +66,7 @@ class RatingScraper(Scraper):
         for rating in self._results:
             # Example entry in _results: (film_title_unreliable, film_id, film_url_pattern, rating, user )
             rating_val = RatingScraper.translate_stars(rating[3])
-            logger.info(f"{rating} --------> {rating_val}")
+            print(f"{rating} --------> {rating_val}")
             ro = RatingObject(
                 film_title=rating[0], film_id=rating[1], film_url=rating[2], film_rating=rating_val, user=rating[4])
             self.results.append(ro)
@@ -84,12 +78,12 @@ class RatingScraper(Scraper):
         rating_val = 0
         if "½" in rating:
             rating_val += 0.5
-            logger.info(f"'½' found in {rating}")
+            print(f"'½' found in {rating}")
         if "★" in rating:
             rating_val += rating.count("★")
 
         if rating_val == 0:
-            logger.info(f"rating with no 1/2 or stars: {rating}")
+            print(f"rating with no 1/2 or stars: {rating}")
 
         if rating == "" or rating == "NR":
             # coerce all "" values into NR, b/c accidental ratings that get regraded to "" should usually be considered NR
@@ -131,39 +125,42 @@ class ParsingStorage:
 
 def main():
     parser = argparse.ArgumentParser("A scraper")
-    parser.add_argument('--get-top-members', dest="n_top_members",
+    parser.add_argument('--get-top-members', dest="get_top_members",
                         help="Scrape < N > most popular Letterboxd members of the last year"
                         " and insert into DB.")
-    parser.add_argument('--user-film-ratings', dest="user",
+    parser.add_argument('--user-film-ratings', dest="user_film_ratings",
                         help="Scrape all film ratings for < user >, insert into DB ")
-    parser.add_argument('--update-film-ratings', dest="update", action="store_true",
+    parser.add_argument('--update-film-ratings', dest="update_film_ratings", action="store_true",
                         help="Flag denoting to scrape film ratings for all users in DB not scraped in the last 7 days")
     args = parser.parse_args()
 
-    logger.info(f"{args=}")
-    if args.n_top_members:
+    print(f"{args=}")
+    if args.get_top_members:
+        print(f"Get Top {args.get_top_members} Members")
         pass
-
-    elif args.user:
+    elif args.user_film_ratings:
+        print(f"User Film Ratings {args.user_film_ratings}")
         pass
-
-    if args.update:
+    elif args.update_film_ratings:
+        print(f"Update film ratings")
         pass
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":
-    # main()
-    db = ParsingStorage()
-
-    # Skip the scraping step here to test data structuring/database insertion
-    with open('scraping/davidteef_ratings.json', 'r') as f:
-        ratings = json.load(f)
-
-    # Test adding structuring to the ratings scrape
-    rs = RatingScraper(user.user_films_rated)
-    rs._results = ratings
-    structured_ratings = rs.structure_results()
-
-    # Test insertion into the DB
-    for r in structured_ratings:
-        db.insert_rating(r)
+    main()
+    # db = ParsingStorage()
+    #
+    # # Skip the scraping step here to test data structuring/database insertion
+    # with open('scraping/davidteef_ratings.json', 'r') as f:
+    #     ratings = json.load(f)
+    #
+    # # Test adding structuring to the ratings scrape
+    # rs = RatingScraper(user.user_films_rated)
+    # rs._results = ratings
+    # structured_ratings = rs.structure_results()
+    #
+    # # Test insertion into the DB
+    # for r in structured_ratings:
+    #     db.insert_rating(r)
