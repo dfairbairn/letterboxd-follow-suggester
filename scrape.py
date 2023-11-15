@@ -7,7 +7,16 @@ from datetime import datetime
 from dataclasses import dataclass
 import hashlib
 @dataclass
-class RatingObject:
+
+
+class DbObject:
+    def __repr__(self):
+        return str(self.__dict__.items())
+
+    def __str__(self):
+        return str(self.__dict__.values())
+
+class RatingObject(DbObject):
     """ A class for structuring film ratings data. TODO: Do validation here """
     def __init__(self, film_title, film_url, film_id, film_rating, user):
         # Database ID entries will be unique to a user/film_id combo.
@@ -23,12 +32,12 @@ class RatingObject:
 
 
 @dataclass
-class ScrapedUserObject:
+class ScrapedUserObject(DbObject):
     """ A class for structuring scrapes of Letterboxd users """
     def __init__(self, user):
         self.user = user
         self.last_updated = datetime.utcnow()
-        self.id = hashlib.md5( bytes(user, "UTF-8") + bytes(str(self.last_updated), "UTF-8") )
+        self.id = hashlib.md5( bytes(user, "UTF-8") + bytes(str(self.last_updated), "UTF-8") ).hexdigest()
 
 
 class Scraper:
@@ -39,6 +48,7 @@ class Scraper:
         self._results = self.results = []
 
     def scrape(self):
+        print(f"[Debug] Executing function {self.scraping_function}")
         self._results = self.scraping_function(*self._args, **self._kwargs)
 
 
@@ -49,8 +59,8 @@ class UsersScraper(Scraper):
         :return:
         """
         self.results = []
-        for rating in self._results:
-            self.results.append(ScrapedUserObject(rating))
+        for user in self._results:
+            self.results.append(ScrapedUserObject(user))
         return self.results
 
 
@@ -119,8 +129,55 @@ class ParsingStorage:
         self.cursor.execute("INSERT INTO users (id, user, last_updated) VALUES (?, ?, ?)",
                             (suo.id, suo.user, suo.last_updated))
 
+    def get_stale_users(self):
+        return ['davidteef', 'brat']
+
     def close(self):
         self.connection.close()
+
+
+
+def cli_get_top_members(get_top_members):
+    print(f"Get Top {get_top_members} Members")
+
+    db = ParsingStorage()
+
+    us = UsersScraper(members.top_users, int(get_top_members))
+    us.scrape()
+    structured_users = us.structure_results()
+    for su in structured_users:
+        print(f"  {str(su)} ")
+        db.insert_member(su)
+    db.connection.commit()
+
+
+def cli_user_film_ratings(user_film_ratings):
+    print(f"User Film Ratings {user_film_ratings}")
+
+    db = ParsingStorage()
+
+    userinfo = user.User(user_film_ratings)
+    rs = RatingScraper(user.user_films_rated, userinfo)
+    rs.scrape()
+    structured_ratings = rs.structure_results()
+
+    # Test insertion into the DB
+    for r in structured_ratings:
+        print(f"  {str(r)}")
+        db.insert_rating(r)
+    db.connection.commit()
+
+
+def cli_update_film_ratings(max_users_to_update):
+    print(f"Update film ratings")
+
+    db = ParsingStorage()
+    stale_user_list = db.get_stale_users()
+    db.close()
+    for i, stale_user in enumerate(stale_user_list):
+        if i >= max_users_to_update:
+            break
+        cli_user_film_ratings(stale_user)
 
 
 def main():
@@ -134,22 +191,24 @@ def main():
                         help="Flag denoting to scrape film ratings for all users in DB not scraped in the last 7 days")
     args = parser.parse_args()
 
+
     print(f"{args=}")
     if args.get_top_members:
-        print(f"Get Top {args.get_top_members} Members")
-        pass
+        cli_get_top_members(args.get_top_members)
+
     elif args.user_film_ratings:
-        print(f"User Film Ratings {args.user_film_ratings}")
-        pass
+        cli_user_film_ratings(args.user_film_ratings)
+
     elif args.update_film_ratings:
-        print(f"Update film ratings")
-        pass
+        cli_update_film_ratings()
+
     else:
         parser.print_help()
 
 
 if __name__ == "__main__":
     main()
+
     # db = ParsingStorage()
     #
     # # Skip the scraping step here to test data structuring/database insertion
