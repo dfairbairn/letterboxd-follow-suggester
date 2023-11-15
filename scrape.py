@@ -1,12 +1,11 @@
 import argparse
 import sqlite3
 from scraping import members, user
-
-
-from datetime import datetime
-from dataclasses import dataclass
+from datetime import datetime, timedelta
 import hashlib
-@dataclass
+
+
+SCRAPE_DB = "scrape_store.db"
 
 
 class DbObject:
@@ -16,28 +15,34 @@ class DbObject:
     def __str__(self):
         return str(self.__dict__.values())
 
+
 class RatingObject(DbObject):
     """ A class for structuring film ratings data. TODO: Do validation here """
     def __init__(self, film_title, film_url, film_id, film_rating, user):
         # Database ID entries will be unique to a user/film_id combo.
         # **This implies we only count a single rating of a film by a user **
 
-        self.last_updated = datetime.utcnow()
-        self.film_title = film_title
-        self.film_url = film_url
-        self.film_id = film_id
-        self.film_rating = film_rating
-        self.user = user
-        self.id = hashlib.md5( bytes(film_id, "UTF-8") + bytes(user, "UTF-8") + bytes(str(self.last_updated), "UTF-8") ).hexdigest()
+        self.last_updated: int = int(datetime.utcnow().timestamp())
+        self.film_title: str = film_title
+        self.film_url: str = film_url
+        self.film_id: int = int(film_id)
+        self.film_rating: float = film_rating
+        self.user: int = user
+        self.id: int = int(hashlib.md5(
+                                  bytes(film_id, "UTF-8") + bytes(user, "UTF-8") + bytes(str(self.last_updated),
+                                                                                         "UTF-8")
+                                 ).hexdigest()[:15], 16)
 
 
-@dataclass
 class ScrapedUserObject(DbObject):
     """ A class for structuring scrapes of Letterboxd users """
     def __init__(self, user):
-        self.user = user
-        self.last_updated = datetime.utcnow()
-        self.id = hashlib.md5( bytes(user, "UTF-8") + bytes(str(self.last_updated), "UTF-8") ).hexdigest()
+        self.user: int = user
+        # Initialize the member at 0 since they haven't been scraped yet
+        self.last_updated: int = 0  # int(datetime.utcnow().timestamp())
+        self.id: int = int(hashlib.md5(
+                                       bytes(user, "UTF-8") + bytes(str(self.last_updated), "UTF-8")
+                                      ).hexdigest()[:15], 16)
 
 
 class Scraper:
@@ -104,37 +109,41 @@ class RatingScraper(Scraper):
 
 class ParsingStorage:
     def __init__(self):
-        self.connection = sqlite3.connect('parse_store.db')
+        self.connection = sqlite3.connect(SCRAPE_DB)
         # self.connection = sqlite3.connect(':memory:')
         self.cursor = self.connection.cursor()
         # if tables don't exist, create them
         self.create_parsing_table()
 
     def create_parsing_table(self):
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, "
-                            "user TEXT, last_updated TEXT)")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, "
+                            "user TEXT, last_updated INTEGER)")
 
         # TODO: Decide on whether to include reviews in this table, or store those separately?
-        self.cursor.execute("CREATE TABLE IF NOT EXISTS ratings(id TEXT PRIMARY KEY, user TEXT, film_title TEXT,"
-                            "film_url TEXT, film_id TEXT, film_rating REAL, last_updated TEXT)")
+        self.cursor.execute("CREATE TABLE IF NOT EXISTS ratings(id INTEGER PRIMARY KEY, user TEXT, film_title TEXT,"
+                            "film_url TEXT, film_id INTEGER, film_rating REAL, last_updated INTEGER)")
 
     def insert_rating(self, ro: RatingObject):
-        self.cursor.execute("INSERT INTO ratings (id, user, film_title, film_url, film_id, film_rating, last_updated) "
+        self.cursor.execute("INSERT OR IGNORE INTO ratings (id, user, film_title, film_url, film_id, film_rating, last_updated) "
                             "VALUES (?, ?, ?, ?, ?, ?, ?)",
                             (ro.id, ro.user, ro.film_title, ro.film_url, ro.film_id, ro.film_rating, ro.last_updated))
 
         self.connection.commit()
 
     def insert_member(self, suo: ScrapedUserObject):
-        self.cursor.execute("INSERT INTO users (id, user, last_updated) VALUES (?, ?, ?)",
+        self.cursor.execute("INSERT OR IGNORE INTO users (id, user, last_updated) VALUES (?, ?, ?)",
                             (suo.id, suo.user, suo.last_updated))
 
     def get_stale_users(self):
-        return ['davidteef', 'brat']
+        stale_timestamp = int((datetime.utcnow() - timedelta(7)).timestamp())
+        print(f"{stale_timestamp=}")
+        self.cursor.execute(f"SELECT * FROM users where last_updated < {stale_timestamp}")
+        users = self.cursor.fetchall()
+        print(f" Found {len(users)} members in DB needing a film rating update")
+        return users
 
     def close(self):
         self.connection.close()
-
 
 
 def cli_get_top_members(get_top_members):
@@ -168,16 +177,17 @@ def cli_user_film_ratings(user_film_ratings):
     db.connection.commit()
 
 
-def cli_update_film_ratings(max_users_to_update):
+def cli_update_film_ratings(max_users_to_update=10, report_stale_users_only=False):
     print(f"Update film ratings")
 
     db = ParsingStorage()
     stale_user_list = db.get_stale_users()
     db.close()
-    for i, stale_user in enumerate(stale_user_list):
-        if i >= max_users_to_update:
-            break
-        cli_user_film_ratings(stale_user)
+    if not report_stale_users_only:
+        for i, stale_user in enumerate(stale_user_list):
+            if i >= max_users_to_update:
+                break
+            cli_user_film_ratings(stale_user)
 
 
 def main():
@@ -190,7 +200,6 @@ def main():
     parser.add_argument('--update-film-ratings', dest="update_film_ratings", action="store_true",
                         help="Flag denoting to scrape film ratings for all users in DB not scraped in the last 7 days")
     args = parser.parse_args()
-
 
     print(f"{args=}")
     if args.get_top_members:
