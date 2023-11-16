@@ -40,7 +40,7 @@ class RatingObject(DbObject):
 class ScrapedUserObject(DbObject):
     """ A class for structuring scrapes of Letterboxd users """
     def __init__(self, user):
-        self.user: int = user
+        self.user: str = user
         # Initialize the member at 0 since they haven't been scraped yet
         self.last_updated: int = 0  # int(datetime.utcnow().timestamp())
         self.id: int = int(hashlib.md5(
@@ -97,13 +97,13 @@ class RatingScraper(Scraper):
         rating_val = 0
         if "½" in rating:
             rating_val += 0.5
-            print(f"'½' found in {rating}")
+            # print(f"'½' found in {rating}")
         if "★" in rating:
             rating_val += rating.count("★")
 
         if rating_val == 0:
-            print(f"rating with no 1/2 or stars: {rating}")
-
+            # print(f"rating with no 1/2 or stars: {rating}")
+            pass
         if rating == "" or rating == "NR":
             # coerce all "" values into NR, b/c accidental ratings that get regraded to "" should usually be considered NR
             rating_val = None
@@ -177,8 +177,14 @@ def cli_user_film_ratings(user_film_ratings):
 
     # Test insertion into the DB
     for r in structured_ratings:
-        print(f"  [Debug] {str(r)}")
+        # print(f"  [Debug] {str(r)}")
         db.insert_rating(r)
+
+    # TODO: move out of the CLI method
+    # Update the users table with the new 'last_updated' value
+    last_updated = int(datetime.utcnow().timestamp())
+    db.cursor.execute(f"UPDATE users SET last_updated = {last_updated} WHERE user = '{user_film_ratings}';")
+
     db.connection.commit()
 
 
@@ -200,6 +206,24 @@ def cli_update_film_ratings(max_users_to_update=30, report_stale_users_only=Fals
         for u in stale_user_list:
             print(u)
 
+
+def cli_refresh_last_updated():
+    """ Helper method if you've got film ratings data in the DB that you don't think needs to be updated"""
+    print(f"[Info] Setting")
+    db = ParsingStorage()
+
+    # TODO: move into the ParsingStorage object
+    db.cursor.execute("SELECT DISTINCT user from ratings")
+    users_to_refresh = [entry[0] for entry in db.cursor.fetchall()]
+    print(f"{users_to_refresh=}")
+
+    for user in users_to_refresh:
+        last_updated = int(datetime.utcnow().timestamp())
+        db.cursor.execute(f"UPDATE users SET last_updated = {last_updated} WHERE user = '{user}';")
+        print(f"  Updated to {last_updated}")
+    db.connection.commit()
+
+
 def main():
     parser = argparse.ArgumentParser("A scraper")
     parser.add_argument('--get-top-members', '-top', dest="get_top_members",
@@ -211,6 +235,8 @@ def main():
                         help="Flag denoting to list users whose film ratings have not been scraped in the last 7 days")
     parser.add_argument('--update-film-ratings', '-upd', dest="update_film_ratings", action="store_true",
                         help="Flag denoting to scrape film ratings for all users in DB not scraped in the last 7 days")
+    parser.add_argument('--refresh-last-updated', '-r', dest="refresh_last_updated", action="store_true",
+                        help="Update the 'last_updated' column in the DB for all users with film ratings")
     args = parser.parse_args()
 
     print(f"{args=}")
@@ -225,6 +251,9 @@ def main():
 
     elif args.update_film_ratings:
         cli_update_film_ratings()
+
+    elif args.refresh_last_updated:
+        cli_refresh_last_updated()
 
     else:
         parser.print_help()

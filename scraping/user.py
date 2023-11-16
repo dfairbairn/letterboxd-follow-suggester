@@ -5,17 +5,18 @@ from scraping.base import Base
 
 
 class User(Base):
-    def __init__(self, username: str) -> None:
+    def __init__(self, username: str, scrape_basic_user_stats=False) -> None:
         if not re.match("^[A-Za-z0-9_]*$", username):
             raise Exception("Invalid username")
 
         self.username = username.lower()
 
-        page = self.get_parsed_page("https://letterboxd.com/" + self.username + "/")
-        
-        self.user_watchlist()
-        self.user_favorites(page)
-        self.user_stats(page)
+        if scrape_basic_user_stats:
+            page = self.get_parsed_page("https://letterboxd.com/" + self.username + "/")
+
+            self.user_watchlist()
+            self.user_favorites(page)
+            self.user_stats(page)
 
     def user_favorites(self, page: BeautifulSoup) -> list:
         data = page.find("section", {"id": ["favourites"], }).findChildren("div")
@@ -51,8 +52,9 @@ class User(Base):
             data = page.find("span", {"class": ["js-watchlist-count"], })
         try:
             ret = data.text.split('\xa0')[0] #remove 'films' from '76 films'
-        except:
-            raise Exception("No user found")
+        except Exception as e:
+            print(f"[Error] Couldn't retrieve watchlist - might be private?. Exception: {e}")
+            ret = 0
 
         self.watchlist_length = ret
         return ret
