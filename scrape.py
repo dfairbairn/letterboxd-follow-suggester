@@ -182,7 +182,7 @@ def cli_user_film_ratings(user_film_ratings):
     db.connection.commit()
 
 
-def cli_update_film_ratings(max_users_to_update=100, report_stale_users_only=False):
+def cli_update_film_ratings(max_users_to_update=30, report_stale_users_only=False):
     print(f"[Info] Check user updates")
 
     db = ParsingStorage()
@@ -196,7 +196,9 @@ def cli_update_film_ratings(max_users_to_update=100, report_stale_users_only=Fal
             cli_user_film_ratings(stale_user)
             sleep_time = BACKOFF_TIME_BASE * (1 + random.random())
             time.sleep(sleep_time)
-
+    else:
+        for u in stale_user_list:
+            print(u)
 
 def main():
     parser = argparse.ArgumentParser("A scraper")
