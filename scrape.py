@@ -7,7 +7,7 @@ import time
 import random
 
 
-BACKOFF_TIME_BASE = 10.0
+BACKOFF_TIME_BASE = 4.0
 SCRAPE_DB = "scrape_store.db"
 
 
@@ -81,15 +81,18 @@ class RatingScraper(Scraper):
          Precondition 2: self.results is empty (we're about to overwrite it if not)
          Assumption: scraping_function outputs those results in the same order as it did originally
         """
-        print(f"  [Debug] Prettifying user film ratings results for {user=}")
         self.results = []
-        for rating in self._results:
-            # Example entry in _results: (film_title_unreliable, film_id, film_url_pattern, rating, user )
-            rating_val = RatingScraper.translate_stars(rating[3])
-            # print(f"{rating} --------> {rating_val}")
-            ro = RatingObject(
-                film_title=rating[0], film_id=rating[1], film_url=rating[2], film_rating=rating_val, user=rating[4])
-            self.results.append(ro)
+        if not self._results and len(self._results) > 0 and len(self._results[0]) != 5:
+            print("[Error] Problem with scraped ratings")
+        else:
+            print(f"[Debug] Structuring scraped ratings for '{self._args}', likely user '{self._results[0][4]}'")
+            for rating in self._results:
+                # Example entry in _results: (film_title_unreliable, film_id, film_url_pattern, rating, user )
+                rating_val = RatingScraper.translate_stars(rating[3])
+                # print(f"{rating} --------> {rating_val}")
+                ro = RatingObject(
+                    film_title=rating[0], film_id=rating[1], film_url=rating[2], film_rating=rating_val, user=rating[4])
+                self.results.append(ro)
         return self.results
 
     @staticmethod
@@ -139,6 +142,7 @@ class ParsingStorage:
                             (suo.id, suo.user, suo.last_updated))
 
     def get_stale_users(self):
+        """ Returns list of all users not updated in the last 7 days """
         stale_timestamp = int((datetime.utcnow() - timedelta(7)).timestamp())
         print(f"{stale_timestamp=}")
         self.cursor.execute(f"SELECT user FROM users where last_updated < {stale_timestamp}")
@@ -188,7 +192,7 @@ def cli_user_film_ratings(user_film_ratings):
     db.connection.commit()
 
 
-def cli_update_film_ratings(max_users_to_update=30, report_stale_users_only=False):
+def cli_update_film_ratings(max_users_to_update=50, report_stale_users_only=False):
     print(f"[Info] Check user updates")
 
     db = ParsingStorage()
@@ -196,9 +200,9 @@ def cli_update_film_ratings(max_users_to_update=30, report_stale_users_only=Fals
     db.close()
     if not report_stale_users_only:
         for i, stale_user in enumerate(stale_user_list):
-            print(f"  [{i}] - [Debug] Fetching film ratings for user '{stale_user}'...")
             if i >= max_users_to_update:
                 break
+            print(f"  [{i}] - [Debug] Fetching film ratings for user '{stale_user}'...")
             cli_user_film_ratings(stale_user)
             sleep_time = BACKOFF_TIME_BASE * (1 + random.random())
             time.sleep(sleep_time)
@@ -231,10 +235,11 @@ def main():
                         " and insert into DB.")
     parser.add_argument('--user-film-ratings', '-ufr', dest="user_film_ratings",
                         help="Scrape all film ratings for < user >, insert into DB ")
+    parser.add_argument('--update-film-ratings', '-upd', dest="update_film_ratings",
+                        help="Scrape film ratings for < N > users in the DB needing updates (i.e. older than 7 days)")
+
     parser.add_argument('--users-to-update', '-utu', dest="users_to_update", action="store_true",
                         help="Flag denoting to list users whose film ratings have not been scraped in the last 7 days")
-    parser.add_argument('--update-film-ratings', '-upd', dest="update_film_ratings", action="store_true",
-                        help="Flag denoting to scrape film ratings for all users in DB not scraped in the last 7 days")
     parser.add_argument('--refresh-last-updated', '-r', dest="refresh_last_updated", action="store_true",
                         help="Update the 'last_updated' column in the DB for all users with film ratings")
     args = parser.parse_args()
@@ -250,7 +255,7 @@ def main():
         cli_update_film_ratings(report_stale_users_only=True)
 
     elif args.update_film_ratings:
-        cli_update_film_ratings()
+        cli_update_film_ratings(max_users_to_update=int(args.update_film_ratings))
 
     elif args.refresh_last_updated:
         cli_refresh_last_updated()
