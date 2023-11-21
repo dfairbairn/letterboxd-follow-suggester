@@ -1,8 +1,11 @@
 from datetime import datetime, timedelta
 import sqlite3
 from scraping.scraper import RatingObject, ScrapedUserObject
+import logging
 
 
+
+logger = logging.getLogger(__name__)
 SCRAPE_DB = "scrape_store.db"
 
 
@@ -40,17 +43,23 @@ class ParsingStorage:
     def get_stale_users(self):
         """ Returns list of all users not updated in the last 7 days """
         stale_timestamp = int((datetime.utcnow() - timedelta(7)).timestamp())
-        print(f"{stale_timestamp=}")
+        logger.debug(f"{stale_timestamp=}")
         self.cursor.execute(f"SELECT user FROM users where last_updated < {stale_timestamp}")
         users = self.cursor.fetchall()
         users_strs = [u[0] for u in users]
-        print(f"  [Info] Found {len(users_strs)} members in DB needing a film rating update")
+        logger.info(f"Found {len(users_strs)} members in DB needing a film rating update")
         return users_strs
 
     def refresh_user(self, username):
         # Update the users table with the new 'last_updated' value
         last_updated = int(datetime.utcnow().timestamp())
         self.cursor.execute(f"UPDATE users SET last_updated = {last_updated} WHERE user = '{username}';")
+        self.connection.commit()
+
+    def remove_user(self, username):
+        # Update the users table with the new 'last_updated' value
+        logger.warning(f"Deleting user {username}")
+        self.cursor.execute(f"DELETE FROM users WHERE user = '{username}';")
         self.connection.commit()
 
     def close(self):

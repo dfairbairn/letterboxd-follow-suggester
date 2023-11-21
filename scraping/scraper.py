@@ -1,6 +1,9 @@
 from datetime import datetime
 import hashlib
+import logging
 
+
+logger = logging.getLogger(__name__)
 
 class DbObject:
     def __repr__(self):
@@ -50,7 +53,7 @@ class Scraper:
         self._results = self.results = []
 
     def scrape(self):
-        print(f"[Debug] Executing function {self.scraping_function}")
+        logger.debug(f"Executing function {self.scraping_function}")
         self._results = self.scraping_function(*self._args, **self._kwargs)
 
 
@@ -61,7 +64,7 @@ class UsersScraper(Scraper):
         :return:
         """
         self.results = []
-        print(f"  [Debug] Prettifying top users results")
+        logger.debug(f"Prettifying top users results")
         for user in self._results:
             self.results.append(ScrapedUserObject(user))
         return self.results
@@ -76,10 +79,10 @@ class RatingScraper(Scraper):
          Assumption: scraping_function outputs those results in the same order as it did originally
         """
         self.results = []
-        if not self._results and len(self._results) > 0 and len(self._results[0]) != 5:
-            print("[Error] Problem with scraped ratings")
+        if not self._results or len(self._results[0]) != 5:
+            logger.error(f"Problem with scraped ratings: {self._results=}")
         else:
-            print(f"[Debug] Structuring scraped ratings for '{self._args}', likely user '{self._results[0][4]}'")
+            logger.debug(f"Structuring scraped ratings for '{self._args}', likely user '{self._results[0][4]}'")
             for rating in self._results:
                 # Example entry in _results: (film_title_unreliable, film_id, film_url_pattern, rating, user )
                 rating_val = RatingScraper.translate_stars(rating[3])

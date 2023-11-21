@@ -8,4 +8,5 @@ source venv/bin/activate
 
 TSTAMP=`date +'%Y%m%d_%H%M%S'`
 
-python3 scrape.py -upd 2>&1 > logs/scrape_$TSTAMP.log &
+python3 scrape.py -upd 50 2>&1 > logs/scrape_$TSTAMP.log &
+deactivate

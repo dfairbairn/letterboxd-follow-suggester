@@ -5,25 +5,30 @@ import time
 import random
 from scraping.scraper import UsersScraper, RatingScraper
 from utils import ParsingStorage
+from utils.reporting import start_logging
+import logging
 
+
+start_logging()
+logger = logging.getLogger(__name__)
 
 BACKOFF_TIME_BASE = 4.0
 
 
 def cli_get_top_members(get_top_members):
-    print(f"[Info] Get Top {get_top_members} Members")
+    logger.info(f"[Info] Get Top {get_top_members} Members")
 
     db = ParsingStorage()
     us = UsersScraper(members.top_users, int(get_top_members))
     us.scrape()
     structured_users = us.structure_results()
     for su in structured_users:
-        print(f"  {str(su)} ")
+        logger.info(f"  {str(su)} ")
         db.insert_member(su)
 
 
 def cli_user_film_ratings(user_film_ratings):
-    print(f"[Info] User Film Ratings {user_film_ratings}")
+    logger.info(f"] User Film Ratings {user_film_ratings}")
 
     db = ParsingStorage()
 
@@ -31,6 +36,12 @@ def cli_user_film_ratings(user_film_ratings):
     rs = RatingScraper(user.user_films_rated, userinfo)
     rs.scrape()
     structured_ratings = rs.structure_results()
+
+    if not structured_ratings:
+        """ Couldn't parse results for this user """
+        logger.error(f"Couldn't get film ratings for user '{user_film_ratings}'")
+        db.remove_user(user_film_ratings)
+
 
     # Test insertion into the DB
     for r in structured_ratings:
@@ -41,7 +52,7 @@ def cli_user_film_ratings(user_film_ratings):
 
 
 def cli_update_film_ratings(max_users_to_update=50, report_stale_users_only=False):
-    print(f"[Info] Check user updates")
+    logger.info(f"] Check user updates")
 
     db = ParsingStorage()
     stale_user_list = db.get_stale_users()
@@ -50,29 +61,31 @@ def cli_update_film_ratings(max_users_to_update=50, report_stale_users_only=Fals
         for i, stale_user in enumerate(stale_user_list):
             if i >= max_users_to_update:
                 break
-            print(f"  [{i}] - [Debug] Fetching film ratings for user '{stale_user}'...")
+            logger.debug(f"  [{i}] - [Debug] Fetching film ratings for user '{stale_user}'...")
             cli_user_film_ratings(stale_user)
             sleep_time = BACKOFF_TIME_BASE * (1 + random.random())
             time.sleep(sleep_time)
     else:
+        logger.info(f"Got stale_user_list of length {len(stale_user_list)}")
         for u in stale_user_list:
-            print(u)
+            logger.debug(u)
+        return stale_user_list
 
 
 def cli_refresh_last_updated():
     """ Helper method if you've got film ratings data in the DB that you don't think needs to be updated"""
-    print(f"[Info] Setting")
+    logger.info(f"] Setting")
     db = ParsingStorage()
 
     # TODO: move into the ParsingStorage object
     db.cursor.execute("SELECT DISTINCT user from ratings")
     users_to_refresh = [entry[0] for entry in db.cursor.fetchall()]
-    print(f"{users_to_refresh=}")
+    logger.info(f"{users_to_refresh=}")
 
     for user in users_to_refresh:
         last_updated = int(datetime.utcnow().timestamp())
         db.cursor.execute(f"UPDATE users SET last_updated = {last_updated} WHERE user = '{user}';")
-        print(f"  Updated to {last_updated}")
+        logger.debug(f"  Updated to {last_updated}")
     db.connection.commit()
 
 
@@ -92,7 +105,7 @@ def main():
                         help="Update the 'last_updated' column in the DB for all users with film ratings")
     args = parser.parse_args()
 
-    print(f"{args=}")
+    logger.debug(f"{args=}")
     if args.get_top_members:
         cli_get_top_members(args.get_top_members)
 
